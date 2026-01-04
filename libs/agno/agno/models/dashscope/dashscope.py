@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel
 
-from agno.exceptions import ModelProviderError
+from agno.exceptions import ModelAuthenticationError
 from agno.models.openai.like import OpenAILike
 
 
@@ -19,7 +19,7 @@ class DashScope(OpenAILike):
         provider (str): The provider name. Defaults to "Qwen".
         api_key (Optional[str]): The DashScope API key.
         base_url (str): The base URL. Defaults to "https://dashscope-intl.aliyuncs.com/compatible-mode/v1".
-        enable_thinking (Optional[bool]): Enable thinking process (DashScope native parameter). Defaults to None.
+        enable_thinking (bool): Enable thinking process (DashScope native parameter). Defaults to False.
         include_thoughts (Optional[bool]): Include thinking process in response (alternative parameter). Defaults to None.
     """
 
@@ -31,8 +31,9 @@ class DashScope(OpenAILike):
     base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
     # Thinking parameters
-    enable_thinking: Optional[bool] = None
+    enable_thinking: bool = False
     include_thoughts: Optional[bool] = None
+    thinking_budget: Optional[int] = None
 
     # DashScope supports structured outputs
     supports_native_structured_outputs: bool = True
@@ -42,10 +43,9 @@ class DashScope(OpenAILike):
         if not self.api_key:
             self.api_key = getenv("DASHSCOPE_API_KEY")
             if not self.api_key:
-                raise ModelProviderError(
+                raise ModelAuthenticationError(
                     message="DASHSCOPE_API_KEY not set. Please set the DASHSCOPE_API_KEY environment variable.",
                     model_name=self.name,
-                    model_id=self.id,
                 )
 
         # Define base client params
@@ -72,10 +72,19 @@ class DashScope(OpenAILike):
         response_format: Optional[Union[Dict, Type[BaseModel]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         params = super().get_request_params(response_format=response_format, tools=tools, tool_choice=tool_choice)
 
-        should_include_thoughts = self.enable_thinking or self.include_thoughts
-        if should_include_thoughts:
-            params["extra_body"] = {"enable_thinking": True}
+        if self.include_thoughts is not None:
+            self.enable_thinking = self.include_thoughts
+
+        if self.enable_thinking is not None:
+            params["extra_body"] = {
+                "enable_thinking": self.enable_thinking,
+            }
+
+            if self.thinking_budget is not None:
+                params["extra_body"]["thinking_budget"] = self.thinking_budget
+
         return params
